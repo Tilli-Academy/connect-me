@@ -1,0 +1,87 @@
+// Carpooling Platform — database schema (plan.md §7).
+// Three models: User, Ride, Booking. Roles (driver/passenger) are relationships, not columns.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  phone        String?
+  bio          String?
+  avatarUrl    String?
+  role         Role     @default(USER) // Phase 10: USER (default) or ADMIN
+  isActive     Boolean  @default(true) // Phase 10: admins can deactivate; false blocks auth
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  ridesOffered Ride[]    @relation("DriverRides")
+  bookings     Booking[] @relation("PassengerBookings")
+}
+
+model Ride {
+  id       String @id @default(uuid())
+  driverId String
+  driver   User   @relation("DriverRides", fields: [driverId], references: [id])
+
+  origin         String
+  destination    String
+  departureAt    DateTime
+  totalSeats     Int
+  availableSeats Int // denormalized; authoritative remaining-seat count
+  pricePerSeat   Decimal    @db.Decimal(10, 2)
+  notes          String?
+  status         RideStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bookings Booking[]
+
+  @@index([origin, destination, departureAt]) // search hot path
+  @@index([driverId])
+}
+
+model Booking {
+  id          String @id @default(uuid())
+  rideId      String
+  ride        Ride   @relation(fields: [rideId], references: [id])
+  passengerId String
+  passenger   User   @relation("PassengerBookings", fields: [passengerId], references: [id])
+
+  seatsBooked Int           @default(1)
+  status      BookingStatus @default(PENDING)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([passengerId])
+  @@index([rideId, status])
+}
+
+enum RideStatus {
+  ACTIVE
+  CANCELLED
+  COMPLETED
+  SUSPENDED // Phase 10: admin-deactivated; excluded from search like any non-ACTIVE status
+}
+
+enum BookingStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  CANCELLED
+}
+
+enum Role {
+  USER
+  ADMIN
+}
